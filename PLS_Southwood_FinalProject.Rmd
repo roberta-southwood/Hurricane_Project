@@ -1,0 +1,199 @@
+---
+title: "PLS_Southwood_FinalProject"
+author: "Roberta Southwood" 
+output:
+  pdf_document: default
+  html_document: default
+date: "2025-04-08"
+---
+
+The topic of my project is hurricanes in the US since the 1850s. The data sources is from NOAA at https://www.aoml.noaa.gov/hrd/hurdat/UShurrs_detailed.html. It has reports all huricanes that made landfall in the US since 1851 with time, location, max winds, storm strength, pressure, and more. 
+
+My currrent idea for finding am interesting question is to look at the change in storm size over time as well as pressure and wind to see how these variables behave over time. I'm also interested in looking at where these storms take place over time as well. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Read CSV
+```{r}
+
+# read csv 
+hurricane <- read.csv("Hurricane.csv")
+                
+```
+
+Load libraries 
+```{r}
+
+# load libraries 
+library(ggmap)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
+```
+
+Load map using API
+
+```{r}
+
+# This is my API key--if you do a lot of mapping on your 
+# own, you'll need to make your own key.
+# Instructions:
+# https://docs.stadiamaps.com/guides/migrating-from-stamen-map-tiles/#ggmap
+# The cache=TRUE argument above means that R will 
+# save the contents of this chunk so it doesn't download 
+# the map each time you knit.
+api_key <- "7c8c56fe-3e81-4259-b812-579db266b926"
+ggmap::register_stadiamaps(api_key)
+
+east_coast <- c(left = -101, bottom = 24, right = -66.5, top = 45)
+
+map <- get_stadiamap(east_coast, maptype = "stamen_toner", zoom = 6)
+
+ggmap(map)
+
+```
+Data Cleaning 
+```{r}
+
+hurricane$Longitude <- as.numeric(sub("W", "", hurricane$Longitude)) * -1
+hurricane$Latitude <- as.numeric(sub("N", "", hurricane$Latitude)) 
+
+
+```
+
+EDA 
+
+```{r}
+
+# view summary 
+summary(hurricane)
+
+# view df 
+head(hurricane)
+
+```
+
+Plot hurricanes by size on map 
+
+```{r}
+# plot hurricanes on map by size 
+
+ggmap(map) +
+  geom_point(data = hurricane, aes(x = Longitude, y = Latitude, size = SS.HWS , color = SS.HWS),
+             alpha = 0.5) +
+  theme_void()
+```
+Create Scatter Plot 
+```{r}
+
+# Make numeric 
+hurricane$Central.Pressure..mb. <- as.numeric(hurricane$Central.Pressure..mb.)
+hurricane$Central.Pressure..mb. <- abs(as.numeric(hurricane$Central.Pressure..mb.))
+
+hurricane <- hurricane %>%
+  mutate(
+    Central.Pressure..mb. = abs(as.numeric(Central.Pressure..mb.)),
+    SS.HWS = as.factor(SS.HWS)  
+  ) %>%
+  filter(SS.HWS != "TS")
+
+
+plot1 <- ggplot(hurricane, aes(x = Central.Pressure..mb., y = Max.Winds...kt., color = SS.HWS)) +
+ geom_point() +
+  theme_minimal() +
+  labs(title = "Lower Pressure Leads to Stronger Winds and Powerful Storms",
+       x = "Central Pressure",
+       y = "Maximum Winds", 
+       color = "Storm Category"
+       )  + 
+  geom_smooth(se = TRUE, color = "darkgrey")
+
+plot1
+```
+
+Create States bar graph 
+```{r}
+
+# rename variables for plotting 
+plot2 <- hurricane %>%
+  mutate(States_Affected = strsplit(States..Affected, ",")) %>%
+  unnest(States_Affected) %>%  
+  mutate(States_Affected = trimws(States_Affected)) %>%  
+  mutate(States_Affected = case_when(
+    grepl("ATX|BTX|CTX|TX1|CX4", States_Affected) ~ "Texas",   
+    grepl("LA", States_Affected) ~ "Louisiana",     
+    grepl("MS", States_Affected) ~ "Mississippi",    
+    grepl("AL", States_Affected) ~ "Alabama",        
+    grepl("AFL|BFL|CFL|DFL|CF3", States_Affected) ~ "Florida", 
+    grepl("GA", States_Affected) ~ "Georgia",        
+    grepl("SC", States_Affected) ~ "South Carolina", 
+    grepl("NC", States_Affected) ~ "North Carolina", 
+    grepl("NY", States_Affected) ~ "New York",       
+    grepl("MA", States_Affected) ~ "Massachusetts",  
+    TRUE ~ States_Affected)) %>%  
+  filter(States_Affected %in% c("Florida", "Texas", "Louisiana", "North Carolina", 
+                                "South Carolina", "Alabama", "Georgia", 
+                                "Mississippi", "New York", "Massachusetts")) %>%
+  count(States_Affected) %>%  
+
+  
+  ggplot(aes(x = reorder(States_Affected, -n), y = n, fill = States_Affected)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  labs(
+    title = "Florida and Texas Lead the United States in Hurricanes since 1851",
+    x = "",
+    y = "Number of Storms") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
+
+plot2
+```
+
+Top states plot wind over time 
+```{r}
+
+hurricane_filtered <- hurricane %>%
+  mutate(Date = as.Date(Date, format = "%m/%d/%Y"),
+         Year = as.numeric(format(Date, "%Y")),
+         DateNum = as.numeric(format(Date, "%Y%m%d"))) %>%
+  filter(SS.HWS %in% c(4, 5))
+
+ggplot(hurricane_filtered, aes(x = DateNum, y = Max.Winds...kt., color = SS.HWS)) +
+  geom_point(size = 3) +
+  labs(
+    title = "Category 4 and 5 Hurricanes Maximum Winds Have Fluctuated Over Time ",
+    x = "Year",
+    y = "Maximum Winds (kt)", 
+     color = "Storm Category"
+  ) +
+  scale_x_continuous(
+    breaks = c(18500101, 19000101, 19500101, 20000101),
+    labels = c("1850", "1900", "1950", "2000")
+    
+    
+  )
+
+ggsave("thirdplot.png", width = 7, height = 5, dpi = 300)
+
+
+```
+
+
+```{r}
+
+# save plots together 
+
+# plot1 + plot2 
+  
+
+# ggsave("twoplots.png", width = 14, height = 7, dpi = 300)
+
+
+```
+
+
+
+
